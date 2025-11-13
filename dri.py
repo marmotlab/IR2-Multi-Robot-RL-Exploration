@@ -24,6 +24,203 @@ import copy
 # 每10步保存一次图片
 SAVE_IMAGE_INTERVAL = 10
 
+
+class RobotIndividualMapTracker:
+    """
+    追蹤並紀錄兩個機器人的個人探索地圖（只包含自己探索的區域）
+    基於 Env 的 robot_belief 來追踪
+    """
+
+    def __init__(self, env, robot_list, save_dir='robot_individual_maps'):
+        """
+        初始化追蹤器
+
+        參數:
+            env: 環境實例（包含所有地圖信息）
+            robot_list: 機器人列表
+            save_dir: 保存地圖的目錄
+        """
+        self.env = env
+        self.robot_list = robot_list
+        self.n_robots = len(robot_list)
+        self.save_dir = save_dir
+
+        # 確保保存目錄存在
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
+
+        # 初始化每個機器人的個人地圖（只有自己探索的區域）
+        self.robot_individual_maps = []
+
+        # 記錄地圖的歷史
+        self.robots_maps_history = []
+
+        # 是否正在追蹤
+        self.is_tracking = False
+
+    def start_tracking(self):
+        """開始追蹤個人地圖"""
+        self.is_tracking = True
+
+        # 初始化個人地圖為未知區域 (值為127)
+        map_shape = self.env.ground_truth.shape
+        self.robot_individual_maps = []
+        for i in range(self.n_robots):
+            individual_map = np.ones(map_shape) * 127
+            self.robot_individual_maps.append(individual_map)
+
+        # 清空地圖歷史
+        self.robots_maps_history = [[] for _ in range(self.n_robots)]
+
+    def update(self):
+        """更新所有機器人的個人探索地圖"""
+        if not self.is_tracking:
+            return
+
+        # 檢查是否已經初始化
+        if not self.robot_individual_maps:
+            self.start_tracking()
+
+        # 更新每個機器人的個人地圖
+        for robot_id in range(self.n_robots):
+            # 從 env 獲取機器人的 belief（這是機器人自己觀察到的地圖）
+            robot_belief = self.env.all_robot_belief[robot_id][robot_id].copy()
+
+            # 更新個人地圖：只記錄這個機器人自己探索的部分
+            # robot_belief 中不為 127 的部分就是該機器人探索過的區域
+            explored_mask = (robot_belief != 127)
+            self.robot_individual_maps[robot_id][explored_mask] = robot_belief[explored_mask]
+
+            # 保存到歷史記錄
+            self.robots_maps_history[robot_id].append(self.robot_individual_maps[robot_id].copy())
+
+    def calculate_overlap(self):
+        """計算兩個機器人探索區域的重疊程度"""
+        if self.n_robots != 2 or not self.robot_individual_maps:
+            return 0
+
+        # 計算兩個機器人都探索過的區域
+        robot1_explored = (self.robot_individual_maps[0] != 127)
+        robot2_explored = (self.robot_individual_maps[1] != 127)
+
+        overlap = np.sum(robot1_explored & robot2_explored)
+
+        # 計算任一機器人探索過的區域
+        any_explored = np.sum(robot1_explored | robot2_explored)
+
+        # 計算重疊比例
+        overlap_ratio = overlap / any_explored if any_explored > 0 else 0
+
+        return overlap_ratio
+
+    def plot_coverage_over_time(self):
+        """
+        繪製覆蓋率隨時間變化的圖表
+        """
+        try:
+            print(f"{GREEN}[調試] plot_coverage_over_time 被調用{NC}")
+            print(f"[調試] n_robots={self.n_robots}, history長度={len(self.robots_maps_history[0]) if self.robots_maps_history else 0}")
+
+            if self.n_robots != 2 or not self.robots_maps_history[0]:
+                print(f"{YELLOW}[調試] 條件不滿足，退出plot_coverage_over_time{NC}")
+                return
+        except Exception as e:
+            print(f"{RED}[錯誤] plot_coverage_over_time 初始檢查失敗: {e}{NC}")
+            import traceback
+            traceback.print_exc()
+            return
+
+        try:
+            # 計算每個時間點的覆蓋率指標
+            time_steps = range(len(self.robots_maps_history[0]))
+            robot1_coverage = []
+            robot2_coverage = []
+            intersection_coverage = []
+            union_coverage = []
+
+            # 計算全局地圖的可探索區域總數（255 = 可探索空間）
+            total_explorable = np.sum(self.env.ground_truth == 255)
+
+            if total_explorable == 0:
+                total_explorable = self.env.ground_truth.size
+
+            print(f"[調試] 開始計算覆蓋率數據，共 {len(time_steps)} 個時間點")
+
+            for i in time_steps:
+                # 獲取每個時間點的地圖
+                robot1_map = self.robots_maps_history[0][i]
+                robot2_map = self.robots_maps_history[1][i]
+
+                # 計算已探索區域（值不為127的區域）
+                robot1_explored = (robot1_map != 127)
+                robot2_explored = (robot2_map != 127)
+
+                # 計算交集（兩個機器人都探索的區域）
+                intersection = np.logical_and(robot1_explored, robot2_explored)
+
+                # 計算聯集（至少一個機器人探索的區域）
+                union = np.logical_or(robot1_explored, robot2_explored)
+
+                # 計算覆蓋率
+                robot1_ratio = np.sum(robot1_explored) / total_explorable
+                robot2_ratio = np.sum(robot2_explored) / total_explorable
+                intersection_ratio = np.sum(intersection) / total_explorable
+                union_ratio = np.sum(union) / total_explorable
+
+                # 保存數據
+                robot1_coverage.append(robot1_ratio)
+                robot2_coverage.append(robot2_ratio)
+                intersection_coverage.append(intersection_ratio)
+                union_coverage.append(union_ratio)
+
+            print(f"[調試] 覆蓋率數據計算完成")
+
+            # 創建圖表
+            plt.figure(figsize=(12, 8))
+
+            # 繪製各條曲線
+            plt.plot(time_steps, robot1_coverage, 'b-', linewidth=2, label='Robot 1')
+            plt.plot(time_steps, robot2_coverage, 'r-', linewidth=2, label='Robot 2')
+            plt.plot(time_steps, intersection_coverage, 'g-', linewidth=2, label='intersection')
+            plt.plot(time_steps, union_coverage, 'k-', linewidth=2, label='union')
+
+            # 添加標籤和標題
+            plt.xlabel('time(steps)', fontsize=14)
+            plt.ylabel('coverage', fontsize=14)
+            plt.title('time-coverage', fontsize=16)
+
+            # 添加網格和圖例
+            plt.grid(True, linestyle='--', alpha=0.7)
+            plt.legend(fontsize=12)
+
+            # 設置y軸範圍
+            plt.ylim(0, 1.05)
+
+            print(f"[調試] 圖表繪製完成，準備保存...")
+
+            # 保存圖片
+            coverage_plot_path = os.path.join(self.save_dir, 'coverage_over_time.png')
+            plt.savefig(coverage_plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            print(f"{GREEN}[調試] 已保存圖表: {coverage_plot_path}{NC}")
+
+            # 保存數據到CSV文件
+            csv_path = os.path.join(self.save_dir, 'coverage_data.csv')
+            df = pd.DataFrame({
+                'Time': time_steps,
+                'Robot1_Coverage': robot1_coverage,
+                'Robot2_Coverage': robot2_coverage,
+                'Intersection': intersection_coverage,
+                'Union': union_coverage
+            })
+            df.to_csv(csv_path, index=False)
+            print(f"{GREEN}[調試] 已保存CSV: {csv_path}{NC}")
+
+        except Exception as e:
+            print(f"{RED}[錯誤] 生成圖表時出錯: {e}{NC}")
+            import traceback
+            traceback.print_exc()
+
 def find_nearest_free_space(ground_truth, position, max_search_radius=50):
     """找到距離給定位置最近的自由空間
 
@@ -140,7 +337,7 @@ class CustomTestWorker(TestWorker):
     """繼承TestWorker並允許自定義環境"""
 
     def __init__(self, meta_agent_id, n_agent, policy_net, global_step, device='cuda',
-                 greedy=False, save_image=False, custom_start_pos=None, output_dir=None):
+                 greedy=False, save_image=False, custom_start_pos=None, output_dir=None, map_index=None):
         self.device = device
         self.greedy = greedy
         self.n_agent = n_agent
@@ -156,8 +353,10 @@ class CustomTestWorker(TestWorker):
             os.makedirs(self.output_dir)
 
         # 使用自定義起始位置創建環境和機器人
+        # 如果指定了map_index，使用指定的地圖；否則使用global_step作為地圖索引
+        actual_map_index = map_index if map_index is not None else self.global_step
         self.env, self.robot_list, self.all_robot_positions = create_custom_env_and_robots(
-            map_index=self.global_step,
+            map_index=actual_map_index,
             n_agent=self.n_agent,
             k_size=self.k_size,
             custom_start_pos=custom_start_pos,
@@ -167,6 +366,19 @@ class CustomTestWorker(TestWorker):
         self.local_policy_net = policy_net
         self.perf_metrics = dict()
         self.max_node_coords = 0
+
+        # 初始化個人地圖追蹤器
+        self.map_tracker = None
+        if self.n_agent == 2 and self.output_dir:  # 只在2個機器人且需要保存時啟用
+            tracker_dir = os.path.join(self.output_dir, 'individual_maps')
+            self.map_tracker = RobotIndividualMapTracker(
+                self.env,
+                self.robot_list,
+                save_dir=tracker_dir
+            )
+            print(f"{GREEN}[調試] 已創建map_tracker，保存目錄: {tracker_dir}{NC}")
+        else:
+            print(f"{YELLOW}[調試] 未創建map_tracker (n_agent={self.n_agent}, output_dir存在={self.output_dir is not None}){NC}")
 
     def save_current_state(self, step, travel_dist_list):
         """保存當前狀態的圖片"""
@@ -219,6 +431,11 @@ class CustomTestWorker(TestWorker):
             print(f"  保存間隔: 每 {SAVE_IMAGE_INTERVAL} 步")
             print(f"  輸出目錄: {self.output_dir}")
             print(f"{GREEN}{'='*70}{NC}\n")
+
+        # 啟動個人地圖追蹤
+        if self.map_tracker is not None:
+            self.map_tracker.start_tracking()
+            print(f"{GREEN}[調試] 已啟動map_tracker追蹤{NC}")
 
         start_time = time.time()
         last_save_time = start_time
@@ -325,6 +542,10 @@ class CustomTestWorker(TestWorker):
                 reward_list[i] += team_reward
                 self.robot_list[i].save_reward_done(reward_list[i], done)
 
+            # 更新個人地圖追蹤
+            if self.map_tracker is not None:
+                self.map_tracker.update()
+
             # 每10步保存一次圖片並顯示進度
             if self.save_image and (step % SAVE_IMAGE_INTERVAL == 0 or step == 0):
                 self.save_current_state(step, travel_dist_list)
@@ -366,6 +587,23 @@ class CustomTestWorker(TestWorker):
         self.perf_metrics['agents_connected_percentage'] = self.env.agents_connected_percentage
         self.perf_metrics['travel_steps'] = step + 1
 
+        # 計算並保存overlap ratio
+        if self.map_tracker is not None:
+            overlap_ratio = self.map_tracker.calculate_overlap()
+            self.perf_metrics['overlap_ratio'] = overlap_ratio
+            print(f"{GREEN}[調試] 計算出overlap_ratio: {overlap_ratio:.2%}{NC}")
+
+            # 生成覆蓋率圖表
+            if self.save_image:
+                print(f"{GREEN}[調試] 正在生成覆蓋率圖表...{NC}")
+                self.map_tracker.plot_coverage_over_time()
+                print(f"{GREEN}[調試] 覆蓋率圖表生成完成{NC}")
+            else:
+                print(f"{YELLOW}[調試] 跳過圖表生成 (save_image={self.save_image}){NC}")
+        else:
+            self.perf_metrics['overlap_ratio'] = 0
+            print(f"{YELLOW}[調試] map_tracker為None，無法計算overlap_ratio{NC}")
+
         if self.save_image:
             elapsed = time.time() - start_time
             print(f"\n{GREEN}{'='*70}{NC}")
@@ -374,6 +612,7 @@ class CustomTestWorker(TestWorker):
             print(f"  探索率: {self.env.explored_rate:.2%}")
             print(f"  最大距離: {max(travel_dist_list):.2f}")
             print(f"  成功完成: {done}")
+            print(f"  Overlap Ratio: {self.perf_metrics.get('overlap_ratio', 0):.2%}")
             print(f"  總用時: {elapsed:.1f}s")
             print(f"  保存圖片數: {(step // SAVE_IMAGE_INTERVAL) + 1}")
             print(f"{GREEN}{'='*70}{NC}")
@@ -381,7 +620,7 @@ class CustomTestWorker(TestWorker):
         return True
 
 
-def run_test_with_custom_start_points(global_network, device, start_points_list, output_dir='results_custom_start'):
+def run_test_with_custom_start_points(global_network, device, start_points_list, output_dir='results_custom_start', map_index=None):
     """使用多個自定義起始點運行測試
 
     參數:
@@ -389,6 +628,7 @@ def run_test_with_custom_start_points(global_network, device, start_points_list,
         device: 計算設備
         start_points_list: 起始點列表，每個元素是 [x, y] 坐標
         output_dir: 輸出目錄
+        map_index: 指定使用的地圖索引，如果為None則每次測試使用不同地圖
     """
 
     # 確保輸出目錄存在
@@ -402,7 +642,7 @@ def run_test_with_custom_start_points(global_network, device, start_points_list,
 
     with open(csv_file_path, mode='w', newline='') as csv_file:
         fieldnames = ['start_point_idx', 'start_x', 'start_y', 'eps', 'num_robots',
-                     'max_dist', 'steps', 'explored', 'success', 'connectivity']
+                     'max_dist', 'steps', 'explored', 'success', 'connectivity', 'overlap_ratio']
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
 
@@ -436,7 +676,8 @@ def run_test_with_custom_start_points(global_network, device, start_points_list,
                 save_image=SAVE_GIFS and test_run == 0,  # 只保存第一次運行的GIF
                 greedy=True,
                 custom_start_pos=start_pos,
-                output_dir=current_output_dir  # 傳遞輸出目錄用於圖片保存
+                output_dir=current_output_dir,  # 傳遞輸出目錄用於圖片保存
+                map_index=map_index  # 傳遞指定的地圖索引
             )
 
             # 運行測試
@@ -458,7 +699,8 @@ def run_test_with_custom_start_points(global_network, device, start_points_list,
                     'steps': perf_metrics['travel_steps'],
                     'explored': perf_metrics['explored_rate'],
                     'success': perf_metrics['success_rate'],
-                    'connectivity': perf_metrics['connectivity_rate']
+                    'connectivity': perf_metrics['connectivity_rate'],
+                    'overlap_ratio': perf_metrics.get('overlap_ratio', 0)
                 }
 
                 start_point_results.append(result)
@@ -680,6 +922,14 @@ def main():
 
     print(f"{GREEN}已載入模型: {MODEL_PATH}{NC}")
 
+    # ============================================================
+    # 配置區域：修改這裡來自定義測試參數
+    # ============================================================
+
+    # 指定使用的地圖索引 (設為None則每次測試使用不同地圖)
+    # 例如: MAP_INDEX = 0 表示所有測試都使用地圖0
+    MAP_INDEX = None  # 設為 None 使用隨機地圖，或設為特定數字(如 0, 1, 2...)使用固定地圖
+
     # 定義多個自定義起始點 [x, y]
     # 兩個機器人將從相同位置開始
     start_points_list = [
@@ -695,18 +945,25 @@ def main():
         [260, 200], 
     ]
 
+    # ============================================================
+
     print(f"\n{GREEN}將測試 {len(start_points_list)} 個不同的起始點{NC}")
     print(f"{GREEN}每個起始點將運行 {NUM_TEST} 次測試{NC}")
+    if MAP_INDEX is not None:
+        print(f"{GREEN}使用固定地圖: 地圖索引 {MAP_INDEX}{NC}")
+    else:
+        print(f"{YELLOW}使用隨機地圖: 每次測試使用不同地圖{NC}")
 
     # 設置輸出目錄
-    output_dir = 'results_custom_start3'
+    output_dir = 'results_custom_start'
 
     # 運行測試
     results = run_test_with_custom_start_points(
         global_network=global_network,
         device=device,
         start_points_list=start_points_list,
-        output_dir=output_dir
+        output_dir=output_dir,
+        map_index=MAP_INDEX
     )
 
     print(f"\n{GREEN}測試完成！{NC}")

@@ -86,7 +86,7 @@ class Worker:
                 distance_to_target = np.linalg.norm(direction)
                 
                 # Define step size (similar to your code's movement)
-                step_size = 2.0  # pixels per step, adjust as needed
+                step_size = 1.0  # pixels per step, adjust as needed
                 
                 if distance_to_target > step_size:
                     # Move step_size towards target
