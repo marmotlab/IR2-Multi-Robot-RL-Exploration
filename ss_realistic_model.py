@@ -25,7 +25,8 @@ class SS_realistic_model:
     def is_within_signal_strength(self, robot_belief, robot_a_location, robot_b_location):
         """ Check if 2 locations are within signal strength threshold given free and obstacle cells in between """
         P_T = self.P_T
-        X, Y = line(robot_a_location[0], robot_a_location[1], robot_b_location[0], robot_b_location[1])
+        X, Y = line(int(robot_a_location[0]), int(robot_a_location[1]), 
+                    int(robot_b_location[0]), int(robot_b_location[1]))
 
         # Count the number of obstacles and free in the line
         num_obst = 0
@@ -53,6 +54,3 @@ class SS_realistic_model:
             return True
         else:
             return False
-
-
-

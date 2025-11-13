@@ -12,6 +12,7 @@ class Robot:
         self.plot = plot
         self.travel_dist = 0
         self.robot_position = position
+        self.target_position = None  # Track target node
         self.observations = None
         
         self.episode_buffer = []

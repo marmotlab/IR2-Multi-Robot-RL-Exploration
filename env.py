@@ -466,55 +466,61 @@ class Env():
         max_map_area = self.ground_truth_size[0] * self.ground_truth_size[1]
         min_map_area = max_map_area * MIN_MAP_DELTA_MAP_RATIO   
         map_delta_unnormalized = self.compute_map_belief_area_diff(robot_id) 
-        current = self.all_robot_positions_belief[robot_id][robot_id]
+        
+        # Use closest node instead of actual position for A*
+        current_actual_pos = self.all_robot_positions_belief[robot_id][robot_id]
+        current_node_idx = self.find_index_from_coords(current_actual_pos, robot_id)
+        current = self.all_node_coords[robot_id][current_node_idx]
 
         if self.group_ids_list is not None:
             for group_ids in self.group_ids_list:
                 if robot_id not in group_ids:
                     for other_id in group_ids:
-                        if map_delta_unnormalized[other_id] < min_map_area: # don't gen path if map_delta is too small ...
+                        if map_delta_unnormalized[other_id] < min_map_area:
                             continue
 
-                        destination = self.all_robot_positions_belief[robot_id][other_id]
-                        if destination is not None:
+                        destination_actual = self.all_robot_positions_belief[robot_id][other_id]
+                        if destination_actual is not None:
+                            # Use closest node instead of actual position
+                            destination_node_idx = self.find_index_from_coords(destination_actual, robot_id)
+                            destination = self.all_node_coords[robot_id][destination_node_idx]
 
-                            map_delta = (map_delta_unnormalized[other_id] * MAP_DELTA_NORM_FACTOR / max_map_area) # Add constant later
+                            map_delta = (map_delta_unnormalized[other_id] * MAP_DELTA_NORM_FACTOR / max_map_area)
 
                             # (1) Find A* path to neighbour
                             dist, route = self.all_graph_generator[robot_id].find_shortest_path(current, destination, self.all_node_coords[robot_id], self.all_graph_generator[robot_id].graph) 
                                                         
-                            # Attempt to run A* reversed since 1st attempt failed
+                            # Attempt to run A* with bidirectional edges if 1st attempt failed
                             if route is None:
-
-                                # # Ensure all graph edges are bidirectional 
                                 t0 = time()
                                 temp_graph = copy.deepcopy(self.all_graph_generator[robot_id].graph)
                                 for node in temp_graph.nodes:
                                     for edge in temp_graph.edges[tuple(node)].values():
                                         temp_graph.add_edge(edge.to_node, node, edge.length)
-                                # print(YELLOW, "[Eps {} | Robot {} | Step {}] A* path is none for rendezvous util. Redefining all graph edges to be bi-directional! ({:.2f}s) ".format(eps, robot_id+1, step, time()-t0), NC)
+                                
                                 dist, route = self.all_graph_generator[robot_id].find_shortest_path(current, destination, self.all_node_coords[robot_id], temp_graph)
 
                                 if route is None:
                                     t1 = time()
                                     self.all_graph_generator[robot_id].edge_clear_all_nodes()
                                     self.all_graph_generator[robot_id].find_k_neighbor_all_nodes(self.all_robot_belief[robot_id][robot_id], update_dense=True, \
-                                                                                                 global_graph=self.all_graph_generator[robot_id].global_graph, global_graph_knn_dist_max=10*SENSOR_RANGE, global_graph_knn_dist_min=0)   # Emphasis on global graph edges to prevent broken graph
+                                                                                                global_graph=self.all_graph_generator[robot_id].global_graph, global_graph_knn_dist_max=10*SENSOR_RANGE, global_graph_knn_dist_min=0)
                                     self.all_graph[robot_id] = copy.deepcopy(self.all_graph_generator[robot_id].graph.edges)
 
                                     temp_graph = copy.deepcopy(self.all_graph_generator[robot_id].graph)
                                     for node in temp_graph.nodes:
                                         for edge in temp_graph.edges[tuple(node)].values():
                                             temp_graph.add_edge(edge.to_node, node, edge.length)
-                                    # print(RED, "[Eps {} | Robot {} | Step {}] A* path is none for rendezvous util. Regen Graph, then redefining all graph edges to be bi-directional! \
-                                    #             Time taken to regen all graph edges: {:.2f}s".format(eps, robot_id+1, step, time()-t1), NC)
+                                    
                                     dist, route = self.all_graph_generator[robot_id].find_shortest_path(current, destination, self.all_node_coords[robot_id], temp_graph)
 
+                            # If still no route, skip this path (don't fail entire episode)
+                            if route is None:
+                                print(YELLOW, f"[Eps {eps} | Robot {robot_id}] Warning: Cannot find A* path from {current} to {destination}. Skipping this rendezvous path.", NC)
+                                continue  # Skip this path, not the entire episode
 
-                            # (2) Backtrack A* path, starting from destination (i.e. agents' position). 
-                            # Decay magnitude of map-delta linearly, based on path len. Min magnitude = MAP_DELTA_MIN_CONST.
-                            if route is not None and route != []:
-
+                            # (2) Backtrack A* path, starting from destination
+                            if route != []:
                                 route = [np.array(coord) for coord in route]    
 
                                 # Densify A* route if too sparse
@@ -533,7 +539,7 @@ class Env():
 
                                 num_inserted = 0
                                 for idx, coords in sorted(coords_to_insert.items()):
-                                    route[(idx+num_inserted):(idx+num_inserted)] = coords       # Merge additional nodes into route list
+                                    route[(idx+num_inserted):(idx+num_inserted)] = coords
                                     num_inserted += len(coords)
 
                                 # Set neighboring dense node coords with same map-delta values
@@ -553,11 +559,6 @@ class Env():
                                             new_map_delta = map_delta - (i*map_delta_decay_rate) + MAP_DELTA_MIN_CONST
                                             if new_map_delta > rendezvous_utility_inputs[index]:
                                                 rendezvous_utility_inputs[index] = new_map_delta
-
-                            elif route is None:
-                                success = False
-                                print(RED, "Astar path is None, for map-delta utility generation! Skipping Episode{}! ".format(eps), NC)
-                                return map_delta_unnormalized, rendezvous_utility_inputs, success
 
             # Set neighboring coords around robot to be 0
             knn = NearestNeighbors(radius=RENDEZVOUS_OWN_POSE_NO_UTIL_RAD)

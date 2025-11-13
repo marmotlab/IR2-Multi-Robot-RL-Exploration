@@ -15,8 +15,8 @@ TEST_SET_DIR = "DungeonMaps/test/" + TEST_SET_NAME
 if TEST_SET_NAME == "hybrid" or TEST_SET_NAME == "corridor":
     MAX_EPS_STEPS=196   
     K_SIZE = 30
-    NUM_ROBOTS_MIN=4
-    NUM_ROBOTS_MAX=4
+    NUM_ROBOTS_MIN=2  # Modified: 2 robots for comparison
+    NUM_ROBOTS_MAX=2  # Modified: 2 robots for comparison
     NODE_COORDS_SCALING_FACTOR=1/640    
     NODE_UTILITY_SCALING_FACTOR=1/50   
     GLOBAL_GRAPH_NODE_COORDS_THRESH=200       # Num node coords before start to perform graph merger
@@ -26,8 +26,8 @@ if TEST_SET_NAME == "hybrid" or TEST_SET_NAME == "corridor":
 else:
     MAX_EPS_STEPS=384   
     K_SIZE = 30
-    NUM_ROBOTS_MIN=5
-    NUM_ROBOTS_MAX=5
+    NUM_ROBOTS_MIN=2  # Modified: 2 robots for comparison
+    NUM_ROBOTS_MAX=2  # Modified: 2 robots for comparison
     NODE_COORDS_SCALING_FACTOR=1/1000   
     NODE_UTILITY_SCALING_FACTOR=1/50    
     GLOBAL_GRAPH_NODE_COORDS_THRESH=340       # Num node coords before start to perform graph merger  
@@ -64,8 +64,9 @@ INPUT_DIM = 6
 
 # --- Sensor Model --- # 
 # SS Reference: https://hal.science/hal-03365129/document
-SENSOR_RANGE=80
-UTILITY_CALC_RANGE=70  
+# Modified: Adjusted to match robotrl configuration for comparison
+SENSOR_RANGE=50  # Modified from 80 to 50 for fair comparison
+UTILITY_CALC_RANGE=45  # Adjusted proportionally from 70
 USE_SIGNAL_STRENGTH_NOT_PROXIMITY=True
 PROXIMITY_COMMS_RANGE_MIN=30
 PROXIMITY_COMMS_RANGE_MAX=150
@@ -120,5 +121,4 @@ RED='\033[1;31m'
 GREEN='\033[1;32m'
 YELLOW='\033[1;93m'       
 NC_BOLD='\033[1m' # Bold, No Color 
-NC='\033[0m' # No Color 
-
+NC='\033[0m' # No Color
