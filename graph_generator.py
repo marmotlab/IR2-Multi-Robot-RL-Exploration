@@ -45,8 +45,8 @@ class Graph_generator:
         self.map_x = map_size[1]
         self.map_y = map_size[0]
         
-        # 使用更稀疏的網格
-        self.grid_resolution = 16  # 每16像素一個節點(原版是每個像素都可能是節點)
+        # 使用適中密度的網格 (減少 grid_resolution 以增加節點數)
+        self.grid_resolution = 8  # 每8像素一個節點 (增加節點密度以改善覆蓋)
         self.uniform_points = self.generate_uniform_points()
         
         self.sensor_range = sensor_range
@@ -94,9 +94,9 @@ class Graph_generator:
         _, _, candidate_indices = np.intersect1d(free_area_to_check, uniform_points_to_check, return_indices=True)
         node_coords = self.uniform_points[candidate_indices]
         
-        # 限制節點數量
-        if len(node_coords) > 500:
-            indices = np.random.choice(len(node_coords), 500, replace=False)
+        # 限制節點數量 (增加上限以改善地圖覆蓋)
+        if len(node_coords) > 800:
+            indices = np.random.choice(len(node_coords), 800, replace=False)
             node_coords = node_coords[indices]
         
         node_coords = np.concatenate((robot_location.reshape(1, 2), node_coords))
@@ -135,10 +135,10 @@ class Graph_generator:
         # 簡化版:只更新局部節點
         robot_location = robot_location_belief[self.robot_id]
         
-        # 生成當前機器人周圍的局部節點
+        # 生成當前機器人周圍的局部節點 - FIX: Convert to integers
         height, width = robot_belief.shape
-        x0, x1 = max(0, robot_location[0] - CUR_AGENT_KNN_RAD), min(width, robot_location[0] + CUR_AGENT_KNN_RAD)
-        y0, y1 = max(0, robot_location[1] - CUR_AGENT_KNN_RAD), min(height, robot_location[1] + CUR_AGENT_KNN_RAD)
+        x0, x1 = max(0, int(robot_location[0]) - CUR_AGENT_KNN_RAD), min(width, int(robot_location[0]) + CUR_AGENT_KNN_RAD)
+        y0, y1 = max(0, int(robot_location[1]) - CUR_AGENT_KNN_RAD), min(height, int(robot_location[1]) + CUR_AGENT_KNN_RAD)
         
         filtered_belief = np.zeros_like(robot_belief)
         filtered_belief[y0:y1, x0:x1] = robot_belief[y0:y1, x0:x1]
@@ -155,9 +155,9 @@ class Graph_generator:
         _, _, candidate_indices = np.intersect1d(local_free_to_check, uniform_to_check, return_indices=True)
         local_node_coords = self.uniform_points[candidate_indices]
         
-        # 限制節點數
-        if len(local_node_coords) > 300:
-            indices = np.random.choice(len(local_node_coords), 300, replace=False)
+        # 限制節點數 (增加上限以改善探索效率)
+        if len(local_node_coords) > 500:
+            indices = np.random.choice(len(local_node_coords), 500, replace=False)
             local_node_coords = local_node_coords[indices]
         
         # 合併舊節點和新節點
@@ -170,10 +170,23 @@ class Graph_generator:
         
         # 更新nodes_list
         coords_old_not_in_new_tuples = [tuple(coords) for coords in coords_old_not_in_new]
-        self.node_coords = [coord for coord in old_node_coords if tuple(coord) not in coords_old_not_in_new_tuples]
-        self.node_coords += list(coords_new_not_in_old)
-        self.node_coords = np.array(self.node_coords)
-        self.nodes_list = [node for node in self.nodes_list if tuple(node.coords) not in coords_old_not_in_new_tuples]
+        
+        # FIXED: Use numpy array operations to properly filter
+        old_node_coords_list = list(old_node_coords)
+        new_node_coords_list = []
+        new_nodes_list = []
+        
+        for i, coord in enumerate(old_node_coords_list):
+            if tuple(coord) not in coords_old_not_in_new_tuples:
+                new_node_coords_list.append(coord)
+                new_nodes_list.append(self.nodes_list[i])
+        
+        # Add new nodes
+        for coord in coords_new_not_in_old:
+            new_node_coords_list.append(list(coord))
+        
+        self.node_coords = np.array(new_node_coords_list)
+        self.nodes_list = new_nodes_list
         
         # 更新已有節點的效用
         if len(old_frontiers) > 0 and len(frontiers) > 0:
@@ -210,18 +223,25 @@ class Graph_generator:
         # 添加新節點
         self.nodes_list += [Node(coord, frontiers, robot_belief) for coord in coords_new_not_in_old]
         
-        # 重建圖edges
+        # 重建圖edges - 先計算哪些節點需要更新
         graph_coords_old_not_in_new = set(map(tuple, self.graph.nodes)) - set(map(tuple, self.node_coords))
         graph_coords_new_not_in_old = set(map(tuple, self.node_coords)) - set(map(tuple, self.graph.nodes))
         
-        # 清除舊節點
-        for coords in graph_coords_old_not_in_new:
-            self.node_clear(coords, remove_bidirectional_edges=True)
-        
-        # 添加新節點並重建edges
+        # 清除舊的，為所有當前節點重建
         if len(graph_coords_new_not_in_old) > 0 or len(graph_coords_old_not_in_new) > 0:
+            # Clear old graph completely
             self.edge_clear_all_nodes()
+            
+            # Rebuild K-NN connections for all nodes
             self.find_k_neighbor_all_nodes_simplified(robot_belief)
+            
+            # Verify all nodes in node_coords have corresponding entries in graph
+            for coord in self.node_coords:
+                coord_tuple = tuple(coord)
+                if coord_tuple not in self.graph.edges:
+                    # Add node to graph even if it has no edges
+                    self.graph.add_node(coord_tuple)
+                    self.graph.edges[coord_tuple] = dict()
         
         # 輸出
         self.node_utility = []
@@ -245,11 +265,20 @@ class Graph_generator:
         只連接最近的k個鄰居,不考慮全局圖
         """
         if len(self.node_coords) < 2:
+            # Still add the single node to graph
+            if len(self.node_coords) == 1:
+                self.graph.add_node(tuple(self.node_coords[0]))
+                self.graph.edges[tuple(self.node_coords[0])] = dict()
             return
         
         kd_tree = KDTree(self.node_coords)
         
         for i, p in enumerate(self.node_coords):
+            # Always add node to graph
+            self.graph.add_node(tuple(p))
+            if tuple(p) not in self.graph.edges:
+                self.graph.edges[tuple(p)] = dict()
+            
             num_neighbors = min(self.k_size, len(self.node_coords))
             
             if num_neighbors > 1:
@@ -264,13 +293,22 @@ class Graph_generator:
                         
                         # 檢查碰撞
                         if not self.check_collision(p, neighbor, robot_belief):
-                            self.graph.add_node(tuple(p))
                             self.graph.add_edge(tuple(p), tuple(neighbor), np.linalg.norm(p - neighbor))
                             count += 1
                             
                             if self.plot:
                                 self.x.append([p[0], neighbor[0]])
                                 self.y.append([p[1], neighbor[1]])
+
+    def find_k_neighbor_all_nodes(self, robot_belief, update_dense=False, global_graph=None, 
+                                   global_graph_knn_dist_max=None, global_graph_knn_dist_min=None):
+        """
+        兼容性包裝器：調用簡化版的 K-NN 方法
+        原版有很多複雜參數，簡化版忽略這些參數，只做基本連接
+        """
+        print(f"[SimplifiedGraphGen Robot {self.robot_id}] Called find_k_neighbor_all_nodes (using simplified version)")
+        # 忽略所有額外參數，直接調用簡化版
+        return self.find_k_neighbor_all_nodes_simplified(robot_belief)
 
 
     def generate_uniform_points(self):

@@ -8,12 +8,12 @@ sys.modules['TRAINING'] = False           # False = Inference Testing
 
 # --- MAPS --- #
 # TODO: Set train set
-TEST_SET_NAME = "hybrid"        # "hybrid", "corridor", "complex", 
+TEST_SET_NAME = "my"        # "hybrid", "corridor", "complex", 
 TEST_SET_DIR = "DungeonMaps/test/" + TEST_SET_NAME
 
 # Easier maps
 if TEST_SET_NAME == "hybrid" or TEST_SET_NAME == "corridor":
-    MAX_EPS_STEPS=196   
+    MAX_EPS_STEPS=1960000   
     K_SIZE = 30
     NUM_ROBOTS_MIN=2  # Modified: 2 robots for comparison
     NUM_ROBOTS_MAX=2  # Modified: 2 robots for comparison
@@ -24,7 +24,7 @@ if TEST_SET_NAME == "hybrid" or TEST_SET_NAME == "corridor":
 
 # Complex maps
 else:
-    MAX_EPS_STEPS=384   
+    MAX_EPS_STEPS=384000000000   
     K_SIZE = 30
     NUM_ROBOTS_MIN=2  # Modified: 2 robots for comparison
     NUM_ROBOTS_MAX=2  # Modified: 2 robots for comparison
