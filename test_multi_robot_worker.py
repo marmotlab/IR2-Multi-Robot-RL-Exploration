@@ -85,7 +85,7 @@ class TestWorker:
                 direction = deciding_robot.target_position - deciding_robot.robot_position
                 distance_to_target = np.linalg.norm(direction)
                 
-                step_size = 5.0  # pixels per step
+                step_size = 1.0  # pixels per step
                 
                 if distance_to_target > step_size:
                     # Move step_size towards target

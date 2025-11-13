@@ -8,7 +8,7 @@ sys.modules['TRAINING'] = False           # False = Inference Testing
 
 # --- MAPS --- #
 # TODO: Set train set
-TEST_SET_NAME = "my"        # "hybrid", "corridor", "complex", 
+TEST_SET_NAME = "my3"        # "hybrid", "corridor", "complex", 
 TEST_SET_DIR = "DungeonMaps/test/" + TEST_SET_NAME
 
 # Easier maps
@@ -68,8 +68,8 @@ INPUT_DIM = 6
 SENSOR_RANGE=50  # Modified from 80 to 50 for fair comparison
 UTILITY_CALC_RANGE=45  # Adjusted proportionally from 70
 USE_SIGNAL_STRENGTH_NOT_PROXIMITY=True
-PROXIMITY_COMMS_RANGE_MIN=30
-PROXIMITY_COMMS_RANGE_MAX=150
+PROXIMITY_COMMS_RANGE_MIN=30000000
+PROXIMITY_COMMS_RANGE_MAX=150000000
 SS_P_T=-20
 SS_THRESH=-70
 SS_GAMMA=2
