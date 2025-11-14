@@ -20,13 +20,14 @@ from sensor import *
 from graph_generator import *
 from node import *
 from ss_realistic_model import SS_realistic_model
+from robot_individual_map_tracker import RobotIndividualMapTracker
 
 
 
 class Env():
-    def __init__(self, map_index, n_agent, k_size=20, plot=False, test=False):
+    def __init__(self, map_index, n_agent, k_size=20, plot=False, test=False, track_individual_maps=False):
         self.n_agent = n_agent
-        self.test = not sys.modules['TRAINING'] 
+        self.test = not sys.modules['TRAINING']
         if self.test:
             self.map_dir = TEST_SET_DIR
         else:
@@ -38,13 +39,24 @@ class Env():
         self.file_path = self.map_list[self.map_index]
         self.ground_truth, self.start_position = self.import_ground_truth(
             self.map_dir + '/' + self.map_list[self.map_index])
-        self.ground_truth_size = np.shape(self.ground_truth) 
+        self.ground_truth_size = np.shape(self.ground_truth)
 
         self.resolution = 4
-        self.sensor_range = SENSOR_RANGE     
+        self.sensor_range = SENSOR_RANGE
         self.connectivity_rate = 0
         self.agents_connected_percentage = 0
         self.explored_rate = 0
+
+        # 初始化個人地圖追蹤器
+        self.track_individual_maps = track_individual_maps
+        self.individual_map_tracker = None
+        if self.track_individual_maps:
+            self.individual_map_tracker = RobotIndividualMapTracker(
+                n_agent=n_agent,
+                ground_truth_size=self.ground_truth_size,
+                sensor_range=self.sensor_range,
+                save_dir='robot_individual_maps'
+            )
         self.all_explored_rate = [0.0 for _ in range(self.n_agent)]
         self.all_rendezvous_utility_inputs = [None for _ in range(self.n_agent)]
         
@@ -122,6 +134,13 @@ class Env():
         self.downsampled_agents_merged_belief = block_reduce(self.agents_merged_belief.copy(), block_size=(self.resolution, self.resolution), func=np.min)
         self.agents_merged_belief_frontiers = self.find_frontier(self.downsampled_agents_merged_belief)
 
+        # 開始追蹤個人地圖（如果啟用）
+        if self.track_individual_maps and self.individual_map_tracker is not None:
+            self.individual_map_tracker.start_tracking()
+            # 初始化每個機器人在起始位置的觀察
+            for id in range(self.n_agent):
+                self.individual_map_tracker.update_robot_map(id, self.start_position, self.ground_truth)
+
 
     def single_robot_step(self, robot_id, all_robot_positions_gt, curr_eps, sim_step, dist_travelled): 
         """ Execute policy in environment """
@@ -139,8 +158,12 @@ class Env():
         next_node_index = self.find_index_from_coords(robot_position, agent_id=robot_id)
         self.all_graph_generator[robot_id].nodes_list[next_node_index].set_visited()
         self.all_robot_belief[robot_id][robot_id] = self.update_robot_belief(robot_position, self.sensor_range, self.all_robot_belief[robot_id][robot_id], self.ground_truth)
-        self.all_downsampled_belief[robot_id] = block_reduce(self.all_robot_belief[robot_id][robot_id].copy(), block_size=(self.resolution, self.resolution), func=np.min)     
-        
+        self.all_downsampled_belief[robot_id] = block_reduce(self.all_robot_belief[robot_id][robot_id].copy(), block_size=(self.resolution, self.resolution), func=np.min)
+
+        ### 更新個人地圖追蹤器（在通訊合並之前） ###
+        if self.track_individual_maps and self.individual_map_tracker is not None:
+            self.individual_map_tracker.update_robot_map(robot_id, robot_position, self.ground_truth)
+
         ### Update global merged belief ###
         self.agents_merged_belief = self.merge_beliefs( [self.agents_merged_belief, self.all_robot_belief[robot_id][robot_id]] )
         self.downsampled_agents_merged_belief = block_reduce(self.agents_merged_belief.copy(), block_size=(self.resolution, self.resolution), func=np.min)
