@@ -148,9 +148,17 @@ class RobotIndividualMapTracker:
 
         參數:
             step: 當前步數
+
+        返回:
+            bool: 是否成功保存
         """
-        if not self.is_tracking or not self.maps_history[0]:
-            return
+        if not self.is_tracking:
+            print(f"警告: 追蹤未啟動，無法保存圖片")
+            return False
+
+        if not self.maps_history[0]:
+            print(f"警告: 地圖歷史為空，無法保存圖片")
+            return False
 
         # 計算需要的子圖佈局
         n_cols = min(3, self.n_agent)  # 每行最多3個
@@ -176,8 +184,11 @@ class RobotIndividualMapTracker:
             axes[i].axis('off')
 
         plt.tight_layout()
-        plt.savefig(os.path.join(self.save_dir, f'individual_maps_step_{step:04d}.png'), dpi=150)
+        save_path = os.path.join(self.save_dir, f'individual_maps_step_{step:04d}.png')
+        plt.savefig(save_path, dpi=150)
         plt.close(fig)
+
+        return True
 
     def get_exploration_ratio(self, global_ground_truth):
         """
