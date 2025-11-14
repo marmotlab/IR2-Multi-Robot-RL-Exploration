@@ -185,10 +185,16 @@ class CustomTestWorkerWithTracker(TestWorker):
             print(f"  輸出目錄: {self.output_dir}")
             if self.track_individual_maps:
                 print(f"  個人地圖追蹤: 已啟用")
+                print(f"  停止條件: Union coverage >= 98% 或進度停滯")
             print(f"{GREEN}{'='*70}{NC}\n")
 
         start_time = time.time()
         last_save_time = start_time
+
+        # 用於檢測進度停滯
+        last_union_coverage = 0.0
+        stagnation_counter = 0
+        stagnation_threshold = 50  # 連續50步（5次檢查）覆蓋率提升 < 0.1% 視為停滯
 
         step = 0
         while not done:
@@ -340,11 +346,23 @@ class CustomTestWorkerWithTracker(TestWorker):
                     union_coverage = np.sum(union) / total_explorable if total_explorable > 0 else 0
                     union_info = f" | Union: {union_coverage:.2%}"
 
-                    # 檢查是否達到停止條件
-                    if union_coverage >= 0.995:
+                    # 檢查停止條件 1: Union coverage >= 98%
+                    if union_coverage >= 0.98:
                         done = True
-                        if self.save_image:
-                            print(f"{GREEN}✓ 聯集覆蓋率達到 99.5%，停止探索{NC}")
+                        print(f"{GREEN}✓ 聯集覆蓋率達到 98%，停止探索 (Union: {union_coverage:.2%}){NC}")
+
+                    # 檢查停止條件 2: 進度停滯檢測
+                    if union_coverage >= 0.90:  # 只在覆蓋率超過 90% 後才檢測停滯
+                        coverage_improvement = union_coverage - last_union_coverage
+                        if coverage_improvement < 0.001:  # 提升少於 0.1%
+                            stagnation_counter += 10  # 每次檢查代表 10 步
+                            if stagnation_counter >= stagnation_threshold:
+                                done = True
+                                print(f"{YELLOW}✓ 探索進度停滯 ({stagnation_counter} 步內提升 < 0.1%)，停止探索 (Union: {union_coverage:.2%}){NC}")
+                        else:
+                            stagnation_counter = 0  # 重置計數器
+
+                    last_union_coverage = union_coverage
 
                 print(f"{GREEN}步數 {step:4d} | "
                       f"探索率: {self.env.explored_rate:6.2%} | "
