@@ -151,6 +151,14 @@ class Worker:
             if self.track_individual_maps and self.env.individual_map_tracker is not None:
                 self.env.individual_map_tracker.save_current_maps(self.all_robot_positions)
 
+            ### 每10步打印一次進度 ###
+            if step % 10 == 0 or step == 0:
+                exploration_info = ""
+                if self.track_individual_maps and self.env.individual_map_tracker is not None:
+                    exploration_ratios = self.env.individual_map_tracker.get_exploration_ratio(self.env.ground_truth)
+                    exploration_info = " | Individual: " + ", ".join([f"R{i+1}:{r:.2%}" for i, r in enumerate(exploration_ratios)])
+                print(f"[Eps {curr_episode} | Step {step:3d}] Explored: {self.env.explored_rate:.2%} | Max Dist: {max(travel_dist_list):.1f}{exploration_info}")
+
             if done:
                 break
 
