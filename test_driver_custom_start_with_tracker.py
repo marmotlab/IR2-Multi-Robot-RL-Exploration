@@ -602,12 +602,17 @@ def run_test_with_custom_start_points(global_network, device, start_points_list,
                 avg_overlap = np.mean([r.get('overlap_ratio', 0) for r in start_point_results])
                 print(f"  平均重疊比例: {avg_overlap:.2%}")
 
+        # 完成第一個起始點的測試後結束
+        print(f"\n{YELLOW}已完成起始點 {start_idx+1} 的所有測試，程序結束{NC}")
+        break
+
     # 生成對比圖表
     generate_comparison_charts(all_results, output_dir, track_individual_maps)
 
-    print(f"\n{GREEN}===== 完成所有起始點的測試 ====={NC}")
-    print(f"結果儲存在: {output_dir}")
-    print(f"數據儲存在: {csv_file_path}")
+    print(f"\n{GREEN}===== 測試完成 ====={NC}")
+    print(f"  共完成 {len(all_results)} 個起始點的測試")
+    print(f"  結果儲存在: {output_dir}")
+    print(f"  數據儲存在: {csv_file_path}")
 
     return all_results
 
