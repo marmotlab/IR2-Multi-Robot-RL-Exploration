@@ -177,8 +177,8 @@ class Graph_generator:
                 knn_rad = CUR_AGENT_KNN_RAD if id == self.robot_id else OTHER_AGENT_KNN_RAD
                 
                 height, width = robot_belief.shape
-                x0, x1 = max(0, position[0] - knn_rad), min(width, position[0] + knn_rad)
-                y0, y1 = max(0, position[1] - knn_rad), min(height, position[1] + knn_rad)
+                x0, x1 = max(0, int(position[0]) - knn_rad), min(width, int(position[0]) + knn_rad)
+                y0, y1 = max(0, int(position[1]) - knn_rad), min(height, int(position[1]) + knn_rad)
                 filtered_belief = np.zeros_like(robot_belief)
                 filtered_belief[y0:y1, x0:x1] = robot_belief[y0:y1, x0:x1]
 
