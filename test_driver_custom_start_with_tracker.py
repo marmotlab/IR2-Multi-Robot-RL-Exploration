@@ -300,6 +300,10 @@ class CustomTestWorkerWithTracker(TestWorker):
             if self.save_image and (step % SAVE_IMAGE_INTERVAL == 0 or step == 0):
                 self.save_current_state(step, travel_dist_list)
 
+                # 保存 individual maps 圖片
+                if self.track_individual_maps and self.env.individual_map_tracker is not None:
+                    self.env.individual_map_tracker.save_current_frame(step)
+
             # 每10步顯示進度（不管是否保存圖片）
             if step % SAVE_IMAGE_INTERVAL == 0 or step == 0:
                 current_time = time.time()
