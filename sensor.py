@@ -8,10 +8,10 @@ import copy
 
 def collision_check(x0, y0, x1, y1, ground_truth, robot_belief):
     """ Checks if line is blocked by obstacle """
-    x0 = x0.round()
-    y0 = y0.round()
-    x1 = x1.round()
-    y1 = y1.round()
+    x0 = int(round(x0))
+    y0 = int(round(y0))
+    x1 = int(round(x1))
+    y1 = int(round(y1))
     dx, dy = abs(x1 - x0), abs(y1 - y0)
     x, y = x0, y0
     error = dx - dy
@@ -24,7 +24,7 @@ def collision_check(x0, y0, x1, y1, ground_truth, robot_belief):
     max_collision = 10
 
     while 0 <= x < ground_truth.shape[1] and 0 <= y < ground_truth.shape[0]:
-        k = ground_truth.item(y, x)
+        k = ground_truth.item(int(y), int(x))
         if k == 1 and collision_flag < max_collision:
             collision_flag += 1
             if collision_flag >= max_collision:
@@ -36,7 +36,7 @@ def collision_check(x0, y0, x1, y1, ground_truth, robot_belief):
         if x == x1 and y == y1:
             break
 
-        robot_belief.itemset((y, x), k)
+        robot_belief.itemset((int(y), int(x)), k)
 
         if error > 0:
             x += x_inc

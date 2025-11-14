@@ -14,7 +14,7 @@ from robot import Robot
 
 
 class Worker:
-    def __init__(self, meta_agent_id, n_agent, policy_net, q_net, global_step, device='cuda', greedy=False, save_image=False):
+    def __init__(self, meta_agent_id, n_agent, policy_net, q_net, global_step, device='cuda', greedy=False, save_image=False, track_individual_maps=False):
         self.device = device
         self.greedy = greedy
         self.n_agent = n_agent
@@ -23,8 +23,9 @@ class Worker:
         self.node_padding_size = NODE_PADDING_SIZE
         self.k_size = K_SIZE
         self.save_image = save_image
+        self.track_individual_maps = track_individual_maps
 
-        self.env = Env(map_index=self.global_step, n_agent=self.n_agent, k_size=self.k_size, plot=save_image)
+        self.env = Env(map_index=self.global_step, n_agent=self.n_agent, k_size=self.k_size, plot=save_image, track_individual_maps=track_individual_maps)
         self.local_policy_net = policy_net
         self.local_q_net = q_net
 
@@ -66,12 +67,38 @@ class Worker:
                 if not success: astar_unsuccessful = True; break
                 deciding_robot.save_observations(deciding_robot.observations)
 
-                ### Forward pass through policy to get next position ###
-                next_position, action_index = self.select_node(deciding_robot.observations, robot_id)
-                deciding_robot.save_action(action_index)
+                ### Check if robot has reached its target or needs new target ###
+                need_new_target = False
+                if deciding_robot.target_position is None:
+                    need_new_target = True
+                else:
+                    distance_to_target = np.linalg.norm(deciding_robot.target_position - deciding_robot.robot_position)
+                    if distance_to_target < 1.0:  # Threshold to consider "arrived"
+                        need_new_target = True
 
-                ### Take Action ###
-                dist_travelled = np.linalg.norm(next_position - deciding_robot.robot_position)
+                ### Forward pass through policy to get next TARGET position (only when needed) ###
+                if need_new_target:
+                    next_target_position, action_index = self.select_node(deciding_robot.observations, robot_id)
+                    deciding_robot.target_position = next_target_position
+                    deciding_robot.save_action(action_index)
+
+                ### Take Action - Move step by step towards current target ###
+                direction = deciding_robot.target_position - deciding_robot.robot_position
+                distance_to_target = np.linalg.norm(direction)
+                
+                # Define step size (similar to your code's movement)
+                step_size = 1.0  # pixels per step, adjust as needed
+                
+                if distance_to_target > step_size:
+                    # Move step_size towards target
+                    normalized_direction = direction / distance_to_target
+                    next_position = deciding_robot.robot_position + normalized_direction * step_size
+                    dist_travelled = step_size
+                else:
+                    # Reached target
+                    next_position = deciding_robot.target_position
+                    dist_travelled = distance_to_target
+                
                 deciding_robot.travel_dist += dist_travelled
                 deciding_robot.robot_position = next_position
 
@@ -119,7 +146,11 @@ class Worker:
                 if not os.path.exists(robot_gifs_path):
                     os.makedirs(robot_gifs_path)
                 self.env.plot_env_ground_truth(self.global_step, robot_gifs_path, step, max(travel_dist_list), robots_route)
-            
+
+            ### 保存個人地圖追蹤器的當前快照 ###
+            if self.track_individual_maps and self.env.individual_map_tracker is not None:
+                self.env.individual_map_tracker.save_current_maps(self.all_robot_positions)
+
             if done:
                 break
 
@@ -143,6 +174,33 @@ class Worker:
                 self.make_gif(robot_gifs_path, curr_episode, robot_id)
             robot_gifs_path = copy.deepcopy(GIFS_DIR) + "/merged"
             self.make_gif_ground_truth(robot_gifs_path, curr_episode)
+
+        # 生成個人地圖追蹤器的分析結果
+        if self.track_individual_maps and self.env.individual_map_tracker is not None:
+            print("正在生成個人地圖追蹤分析...")
+
+            # 生成覆蓋率隨時間變化的圖表
+            self.env.individual_map_tracker.plot_coverage_over_time(self.env.ground_truth)
+
+            # 計算並打印重疊統計
+            overlap_stats = self.env.individual_map_tracker.calculate_overlap()
+            print(f"探索區域聯集: {overlap_stats['union_area']} pixels")
+            print(f"探索區域交集: {overlap_stats['intersection_area']} pixels")
+            print(f"總體重疊比例: {overlap_stats['overall_overlap_ratio']:.4f}")
+            if overlap_stats['pairwise_overlaps']:
+                print("兩兩機器人重疊比例:")
+                for pair, ratio in overlap_stats['pairwise_overlaps'].items():
+                    print(f"  {pair}: {ratio:.4f}")
+
+            # 獲取並打印每個機器人的探索比例
+            exploration_ratios = self.env.individual_map_tracker.get_exploration_ratio(self.env.ground_truth)
+            print("各機器人探索比例:")
+            for robot_id, ratio in enumerate(exploration_ratios):
+                print(f"  Robot {robot_id+1}: {ratio:.4f}")
+
+            # 保存地圖歷史（每10步保存一次）
+            if self.save_image:
+                self.env.individual_map_tracker.save_map_history(interval=10)
 
         num_node_coords = len(max(self.env.all_node_coords, key=len))
         if self.max_node_coords < num_node_coords:

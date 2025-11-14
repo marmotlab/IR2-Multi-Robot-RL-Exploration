@@ -1,5 +1,5 @@
 #######################################################################
-# Name: multi_robot_worker.py
+# Name: test_multi_robot_worker.py
 # [Inference] Interact with environment and collect episode experience.
 #######################################################################
 
@@ -59,11 +59,44 @@ class TestWorker:
                 deciding_robot.observations, success = self.get_observations(deciding_robot.robot_position, robot_id, curr_episode, step, plot=True)
                 if not success: astar_unsuccessful = True; break
 
-                ### Forward pass through policy to get next position ###
-                next_position, action_index = self.select_node(deciding_robot.observations, robot_id)
+                ### Check if robot needs new target ###
+                need_new_target = False
+                if deciding_robot.target_position is None:
+                    need_new_target = True
+                else:
+                    distance_to_target = np.linalg.norm(deciding_robot.target_position - deciding_robot.robot_position)
+                    if distance_to_target < 2.0:  # Close enough to target
+                        need_new_target = True
 
-                ### Take Action (Deconflict if 2 agents choose the same target position) ###
-                dist_travelled = np.linalg.norm(next_position - deciding_robot.robot_position)
+                ### Get new target from policy if needed ###
+                if need_new_target:
+                    next_target_position, action_index = self.select_node(deciding_robot.observations, robot_id)
+                    
+                    # Check if new target is different from current position
+                    target_dist = np.linalg.norm(next_target_position - deciding_robot.robot_position)
+                    if target_dist > 1.0:  # Only update if target is far enough
+                        deciding_robot.target_position = next_target_position
+                    else:
+                        # Target too close or same, keep old target or stay
+                        if deciding_robot.target_position is None:
+                            deciding_robot.target_position = deciding_robot.robot_position
+
+                ### Move one step towards target ###
+                direction = deciding_robot.target_position - deciding_robot.robot_position
+                distance_to_target = np.linalg.norm(direction)
+                
+                step_size = 1.0  # pixels per step
+                
+                if distance_to_target > step_size:
+                    # Move step_size towards target
+                    normalized_direction = direction / distance_to_target
+                    next_position = deciding_robot.robot_position + normalized_direction * step_size
+                    dist_travelled = step_size
+                else:
+                    # Reached target
+                    next_position = deciding_robot.target_position
+                    dist_travelled = distance_to_target
+                
                 deciding_robot.travel_dist += dist_travelled
                 deciding_robot.robot_position = next_position
 
@@ -178,11 +211,9 @@ class TestWorker:
                     occupied_node[index] = 1
 
         # Collate final augmented node_coords inputs
-        # node_inputs = np.concatenate((node_coords, node_utility_inputs, guidepost, occupied_node, nodes_ss), axis=1) - ABLATION
         node_inputs = np.concatenate((node_coords, node_utility_inputs, rendezvous_utility_inputs, guidepost, occupied_node), axis=1)  
-        node_inputs = torch.FloatTensor(node_inputs).unsqueeze(0).to(self.device)  # (1, node_padding_size+1, 3)
+        node_inputs = torch.FloatTensor(node_inputs).unsqueeze(0).to(self.device)
 
-        # print("node_coords.shape[0]: ", node_coords.shape[0])
         if node_coords.shape[0] >= self.node_padding_size:
             print(RED, "[Eps {} | Robot {} | Step {}] node_coords.shape[0] >= self.node_padding_size ({} >= {}). Skipping eps.".format(eps, robot_id+1, step, node_coords.shape[0], self.node_padding_size))
             return [], False
@@ -211,17 +242,17 @@ class TestWorker:
         while len(edge) < self.k_size:
             edge.append(0)
 
-        edge_inputs = torch.tensor(edge).unsqueeze(0).unsqueeze(0).to(self.device)  # (1, 1, k_size)
+        edge_inputs = torch.tensor(edge).unsqueeze(0).unsqueeze(0).to(self.device)
         edge_padding_mask = torch.zeros((1, 1, K_SIZE), dtype=torch.int64).to(self.device)
         one = torch.ones_like(edge_padding_mask, dtype=torch.int64).to(self.device)
         if not (edge_inputs.shape == one.shape == edge_padding_mask.shape):
-            print(RED, "[Eps {} | Robot {} | Step {}] Not (edge_inputs.shape = one.shape == edge_padding_mask.shape) not (edge_inputs.shape == one.shape == edge_padding_mask.shape). Skipping eps.".format(eps, robot_id+1, step))
+            print(RED, "[Eps {} | Robot {} | Step {}] Shape mismatch. Skipping eps.".format(eps, robot_id+1, step))
             return [], False
 
         edge_padding_mask = torch.where(edge_inputs == 0, one, edge_padding_mask)
 
         observations = node_inputs, edge_inputs, current_index, node_padding_mask, edge_padding_mask, edge_mask
-        return observations, True   # success
+        return observations, True
 
     def select_node(self, observations, robot_id):
         """ Forward pass through policy to get next position to go to """
