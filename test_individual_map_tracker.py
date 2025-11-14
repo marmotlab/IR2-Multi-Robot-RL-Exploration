@@ -68,6 +68,17 @@ def test_individual_map_tracking(custom_map_path=None, custom_start_positions=No
     print(f"環境地圖大小: {worker.env.ground_truth_size}")
     print(f"傳感器範圍: {worker.env.sensor_range}")
 
+    # 檢查追蹤器狀態
+    print(f"\n追蹤器狀態檢查:")
+    print(f"  - worker.track_individual_maps: {worker.track_individual_maps}")
+    print(f"  - worker.env.track_individual_maps: {worker.env.track_individual_maps}")
+    print(f"  - worker.env.individual_map_tracker: {worker.env.individual_map_tracker}")
+    if worker.env.individual_map_tracker is not None:
+        print(f"  - tracker.is_tracking: {worker.env.individual_map_tracker.is_tracking}")
+        print(f"  ✓ 個人地圖追蹤已啟用")
+    else:
+        print(f"  ✗ 警告: 追蹤器未初始化！")
+
     # 運行測試 episode
     print(f"\n開始運行測試 episode {episode_number}...")
     success = worker.run_episode(episode_number)
