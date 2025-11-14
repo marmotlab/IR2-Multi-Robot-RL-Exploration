@@ -15,7 +15,7 @@ from model import PolicyNet, QNet
 from multi_robot_worker import Worker
 
 
-def test_individual_map_tracking():
+def test_individual_map_tracking(custom_map_path=None, custom_start_positions=None):
     """
     測試個人地圖追蹤功能
 
@@ -23,6 +23,10 @@ def test_individual_map_tracking():
     1. 啟用個人地圖追蹤
     2. 運行一個測試 episode
     3. 生成覆蓋率分析和可視化
+
+    參數:
+        custom_map_path: 自定義地圖路徑（可選）
+        custom_start_positions: 自定義起始位置列表 [(x1,y1), (x2,y2), ...] （可選）
     """
     print("=" * 70)
     print("個人地圖追蹤測試")
@@ -32,6 +36,13 @@ def test_individual_map_tracking():
     n_agent = 2  # 機器人數量
     episode_number = 1
     meta_agent_id = 0
+
+    # 如果提供了自定義起始位置，調整機器人數量
+    if custom_start_positions is not None:
+        n_agent = min(n_agent, len(custom_start_positions))
+        print(f"使用自定義起始位置，機器人數量: {n_agent}")
+        for i, pos in enumerate(custom_start_positions[:n_agent]):
+            print(f"  Robot {i+1}: {pos}")
 
     # 初始化模型
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -103,8 +114,33 @@ def test_individual_map_tracking():
 
 def main():
     """主函數"""
+
+    # ==================== 配置區域 ====================
+    # 1. 指定自定義地圖（設為 None 使用默認地圖）
+    CUSTOM_MAP = None  # 例如: "DungeonMaps/test/complex/100.png"
+
+    # 2. 指定10個起始點（設為 None 使用默認起始點）
+    CUSTOM_START_POSITIONS = None
+    # 示例：取消下面的註釋以使用自定義起始點
+    # CUSTOM_START_POSITIONS = [
+    #     (100, 100),  # Robot 1
+    #     (200, 100),  # Robot 2
+    #     (300, 100),  # Robot 3
+    #     (100, 200),  # Robot 4
+    #     (200, 200),  # Robot 5
+    #     (300, 200),  # Robot 6
+    #     (100, 300),  # Robot 7
+    #     (200, 300),  # Robot 8
+    #     (300, 300),  # Robot 9
+    #     (400, 300),  # Robot 10
+    # ]
+    # ==================================================
+
     try:
-        test_individual_map_tracking()
+        test_individual_map_tracking(
+            custom_map_path=CUSTOM_MAP,
+            custom_start_positions=CUSTOM_START_POSITIONS
+        )
     except Exception as e:
         print(f"\n錯誤: {e}")
         import traceback
