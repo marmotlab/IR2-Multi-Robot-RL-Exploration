@@ -300,6 +300,8 @@ class CustomTestWorkerWithTracker(TestWorker):
 
             # 保存個人地圖追蹤器快照
             if self.track_individual_maps and self.env.individual_map_tracker is not None:
+                if step <= 1:  # 調試前兩步
+                    print(f"[DEBUG] Step {step}: 調用 save_current_maps, is_tracking={self.env.individual_map_tracker.is_tracking}")
                 self.env.individual_map_tracker.save_current_maps(self.all_robot_positions)
 
             # 每10步保存一次圖片
@@ -309,6 +311,11 @@ class CustomTestWorkerWithTracker(TestWorker):
             # 每10步保存 individual maps 圖片（無論 save_image 設置如何）
             if self.track_individual_maps and self.env.individual_map_tracker is not None:
                 if step % SAVE_IMAGE_INTERVAL == 0 or step == 0:
+                    if step == 0:  # 調試 step 0
+                        print(f"[DEBUG] Step {step}: 準備調用 save_current_frame")
+                        print(f"[DEBUG] is_tracking={self.env.individual_map_tracker.is_tracking}")
+                        print(f"[DEBUG] maps_history 長度={len(self.env.individual_map_tracker.maps_history[0]) if self.env.individual_map_tracker.maps_history else 'N/A'}")
+
                     success = self.env.individual_map_tracker.save_current_frame(step)
                     if success:
                         save_dir = self.env.individual_map_tracker.save_dir

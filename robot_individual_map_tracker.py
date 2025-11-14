@@ -103,6 +103,7 @@ class RobotIndividualMapTracker:
             robot_positions: 所有機器人的位置列表
         """
         if not self.is_tracking:
+            print(f"[DEBUG] save_current_maps: is_tracking={self.is_tracking}, 跳過保存")
             return
 
         # 為每個機器人創建帶位置標記的地圖副本並保存
@@ -112,6 +113,10 @@ class RobotIndividualMapTracker:
                 robot_positions[robot_id]
             )
             self.maps_history[robot_id].append(map_with_robot.copy())
+
+        # 調試信息
+        if len(self.maps_history[0]) <= 2:
+            print(f"[DEBUG] save_current_maps 完成: maps_history 長度 = {len(self.maps_history[0])}")
 
     def _get_map_with_robot(self, map_data, position):
         """
@@ -153,11 +158,11 @@ class RobotIndividualMapTracker:
             bool: 是否成功保存
         """
         if not self.is_tracking:
-            print(f"警告: 追蹤未啟動，無法保存圖片")
+            print(f"[DEBUG] save_current_frame step {step}: 追蹤未啟動 (is_tracking={self.is_tracking})")
             return False
 
         if not self.maps_history[0]:
-            print(f"警告: 地圖歷史為空，無法保存圖片")
+            print(f"[DEBUG] save_current_frame step {step}: 地圖歷史為空 (maps_history 長度={len(self.maps_history[0]) if self.maps_history else 'N/A'})")
             return False
 
         # 計算需要的子圖佈局
