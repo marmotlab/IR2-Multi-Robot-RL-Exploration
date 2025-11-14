@@ -296,26 +296,51 @@ class CustomTestWorkerWithTracker(TestWorker):
             if self.track_individual_maps and self.env.individual_map_tracker is not None:
                 self.env.individual_map_tracker.save_current_maps(self.all_robot_positions)
 
-            # 每10步保存一次圖片並顯示進度
+            # 每10步保存一次圖片
             if self.save_image and (step % SAVE_IMAGE_INTERVAL == 0 or step == 0):
                 self.save_current_state(step, travel_dist_list)
 
+            # 每10步顯示進度（不管是否保存圖片）
+            if step % SAVE_IMAGE_INTERVAL == 0 or step == 0:
                 current_time = time.time()
                 elapsed_total = current_time - start_time
                 elapsed_interval = current_time - last_save_time
                 last_save_time = current_time
 
-                # 顯示個人地圖追蹤信息
+                # 顯示個人地圖追蹤信息和聯集覆蓋率
                 individual_info = ""
+                union_info = ""
+                union_coverage = 0.0
+
                 if self.track_individual_maps and self.env.individual_map_tracker is not None:
                     exploration_ratios = self.env.individual_map_tracker.get_exploration_ratio(self.env.ground_truth)
                     individual_info = " | Individual: " + ", ".join([f"R{i+1}:{r:.2%}" for i, r in enumerate(exploration_ratios)])
+
+                    # 計算聯集覆蓋率
+                    explored_masks = []
+                    for robot_id in range(self.n_agent):
+                        explored_mask = (self.env.individual_map_tracker.individual_maps[robot_id] == 255)
+                        explored_masks.append(explored_mask)
+
+                    union = np.zeros_like(explored_masks[0], dtype=bool)
+                    for mask in explored_masks:
+                        union = union | mask
+
+                    total_explorable = np.sum(self.env.ground_truth == 255)
+                    union_coverage = np.sum(union) / total_explorable if total_explorable > 0 else 0
+                    union_info = f" | Union: {union_coverage:.2%}"
+
+                    # 檢查是否達到停止條件
+                    if union_coverage >= 0.995:
+                        done = True
+                        if self.save_image:
+                            print(f"{GREEN}✓ 聯集覆蓋率達到 99.5%，停止探索{NC}")
 
                 print(f"{GREEN}步數 {step:4d} | "
                       f"探索率: {self.env.explored_rate:6.2%} | "
                       f"最大距離: {max(travel_dist_list):7.2f} | "
                       f"用時: {elapsed_total:6.1f}s | "
-                      f"間隔: {elapsed_interval:4.1f}s{individual_info}{NC}")
+                      f"間隔: {elapsed_interval:4.1f}s{individual_info}{union_info}{NC}")
 
             if done:
                 if self.save_image:
